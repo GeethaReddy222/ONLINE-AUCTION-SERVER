@@ -69,6 +69,7 @@ router.post("/add-product", authMiddleware, async (req, res) => {
 
 //Get all products
 router.get("/all", async (req, res) => {
+  const now=new Date();
   try {
     const products = await Product.find({ status: "approved" });
     if (products.length === 0) {
@@ -80,6 +81,34 @@ router.get("/all", async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 });
+
+
+
+// Update approved products to active based on startTime
+router.patch("/update-auctions", async (req, res) => {
+  try {
+    const now = new Date();
+
+    // Find and update all approved products whose startTime has passed
+    const updated = await Product.updateMany(
+      {
+        status: "approved",
+        startTime: { $lte: now },
+        endTime: { $gt: now }
+      },
+      {
+        $set: { status: "active" }
+      }
+    );
+
+    res.status(200).json({message: "Products updated to active",});
+  } catch (error) {
+    console.error("Error updating active auctions:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 
 
 //Get the auction products by category
