@@ -67,9 +67,9 @@ router.post("/add-product", authMiddleware, async (req, res) => {
 });
 
 
-//Get all products
-router.get("/all", async (req, res) => {
-  const now=new Date();
+//Get all upcoming products
+router.get("/upcoming-products", async (req, res) => {
+  
   try {
     const products = await Product.find({ status: "approved" });
     if (products.length === 0) {
@@ -83,32 +83,45 @@ router.get("/all", async (req, res) => {
 });
 
 
-
-// Update approved products to active based on startTime
-router.patch("/update-auctions", async (req, res) => {
+//Update approved products to active if current time is within auction window
+router.patch('/update-active', async (req, res) => {
   try {
     const now = new Date();
 
-    // Find and update all approved products whose startTime has passed
-    const updated = await Product.updateMany(
+    const updatedProducts = await Product.updateMany(
       {
-        status: "approved",
-        startTime: { $lte: now },
+        status: 'approved',
+        startTime: { $lte: now},  // products starting now or within 1 hour
         endTime: { $gt: now }
       },
       {
-        $set: { status: "active" }
+        $set: { status: 'active' }
       }
     );
 
-    res.status(200).json({message: "Products updated to active",});
+    res.status(200).json({ message: 'Products updated', result: updatedProducts });
   } catch (error) {
-    console.error("Error updating active auctions:", error);
-    res.status(500).json({ message: "Server error" });
+    console.error('Error updating active products:', error);
+    res.status(500).json({ message: 'Server Error' });
   }
 });
 
 
+// ✅ Get all products with status: active
+router.get('/active-products', async (req, res) => {
+  try {
+    const activeProducts = await Product.find({ status: 'active' });
+
+    if (!activeProducts.length) {
+      return res.status(400).json({ message: 'No active products found' });
+    }
+
+    res.status(200).json(activeProducts);
+  } catch (error) {
+    console.error('Error fetching active products:', error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
 
 
 //Get the auction products by category

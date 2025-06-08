@@ -19,7 +19,7 @@ const productSchema = new mongoose.Schema({
     enum: ['books', 'electronics', 'jewelry', 'vehicles', 'other']
   },
 
-  // Auction Timeline (no validations)
+  
   startTime: {
     type: Date,
     required: true
@@ -29,7 +29,7 @@ const productSchema = new mongoose.Schema({
     required: true
   },
 
-  // Pricing
+  
   startingPrice: {
     type: Number,
     required: true,

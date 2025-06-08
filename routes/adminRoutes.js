@@ -174,6 +174,12 @@ router.patch("/pending-approvals/:id", authMiddleware, async (req, res) => {
 });
 
 
+
+
+
+
+
+
 // router.patch("/pending-approvals/:id", adminAuth, async (req, res) => {
 //   const { action } = req.body;
 //   const { id } = req.params;
