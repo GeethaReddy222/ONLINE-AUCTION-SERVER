@@ -65,10 +65,10 @@ const productSchema = new mongoose.Schema({
   }],
 
   // Bids
-  bids: [{
+   bids: [{
     bidder: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     amount: { type: Number, required: true },
-    time: { type: Date, default: Date.now }
+    time: { type: Date, default: Date.now } 
   }]
 }, { 
   timestamps: true 

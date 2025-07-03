@@ -4,53 +4,49 @@ const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 const mongoose = require("mongoose");
 
-
-//Add a product
 router.post("/add-product", authMiddleware, async (req, res) => {
   const {
     title,
     description,
     category,
     startingPrice,
-    quantity,
     startTime,
     endTime,
-    images,
-    status,
-    quanity = 1,
+    images
   } = req.body;
 
   try {
-    
-    if (!title ||!description ||!category ||!startingPrice ||!startTime ||!endTime) {
+    // Validate required fields
+    if (!title || !description || !category || !startingPrice || !startTime || !endTime) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    if (quantity < 1) {
-      return res.status(400).json({ message: "Quantity must be at least 1" });
+    // Validate category
+    const validCategories = ['books', 'electronics', 'jewelry', 'vehicles', 'other', 
+                            'home', 'fitness', 'clothing', 'food', 'accessories'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ message: "Invalid category" });
     }
+
+    // Validate dates
     const startDate = new Date(startTime);
     const endDate = new Date(endTime);
     const currentDate = new Date();
 
     if (startDate >= endDate) {
-      return res
-        .status(400)
-        .json({ message: "End time must be after start time" });
+      return res.status(400).json({ message: "End time must be after start time" });
     }
     if (startDate <= currentDate) {
-      return res
-        .status(400)
-        .json({ message: "Start time must be after current time" });
+      return res.status(400).json({ message: "Start time must be in the future" });
     }
 
+    // Create new product
     const newProduct = new Product({
       title,
       description,
       category,
       startingPrice,
       currentPrice: startingPrice,
-      quantity: quantity || 1, // Default to 1
       startTime: startDate,
       endTime: endDate,
       images,
@@ -66,32 +62,14 @@ router.post("/add-product", authMiddleware, async (req, res) => {
   }
 });
 
-
-//Get all upcoming products
-router.get("/upcoming-products", async (req, res) => {
-  
-  try {
-    const products = await Product.find({ status: "approved" });
-    if (products.length === 0) {
-      return res.status(400).json({ message: "No products" });
-    }
-    return res.status(200).json(products);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server Error" });
-  }
-});
-
-
-//Update approved products to active if current time is within auction window
+// Update approved products to active
 router.patch('/update-active', async (req, res) => {
   try {
     const now = new Date();
-
     const updatedProducts = await Product.updateMany(
       {
         status: 'approved',
-        startTime: { $lte: now},  // products starting now or within 1 hour
+        startTime: { $lte: now },
         endTime: { $gt: now }
       },
       {
@@ -106,8 +84,7 @@ router.patch('/update-active', async (req, res) => {
   }
 });
 
-
-// ✅ Get all products with status: active
+// Get all active products
 router.get('/active-products', async (req, res) => {
   try {
     const activeProducts = await Product.find({ status: 'active' });
@@ -124,79 +101,112 @@ router.get('/active-products', async (req, res) => {
 });
 
 
-//Get the auction products by category
-router.get("/category", async (req, res) => {
-  const { category } = req.query;
-  const validCategories = [
-    "books",
-    "electronics",
-    "jewelry",
-    "vehicles",
-    "other",
-  ];
-  const isValidCategory = validCategories.includes(category);
+//get all bids placed by the logged in user
+router.get("/bids", authMiddleware, async (req, res) => {
+  const userId = req.user._id;
+
   try {
-    if (!isValidCategory) {
-      return res.status(400).json({ message: "Invalid Product Category" });
+    // Find products where the user has placed a bid
+    const products = await Product.find({ "bids.bidder": userId })
+      .populate("seller", "name email")
+      .lean(); // lean for better performance
+
+    const userBids = [];
+
+    for (const product of products) {
+      const userBid = product.bids.find(
+        (bid) => bid.bidder.toString() === userId.toString()
+      );
+
+      if (userBid) {
+        userBids.push({
+          productId: product._id,
+          productTitle: product.title,
+          productImage: product.images?.[0]?.url || null,
+          category: product.category,
+          status: product.status,
+          startingPrice:product.startingPrice,
+          currentPrice: product.currentPrice,
+          startTime: product.startTime,
+          endTime: product.endTime,
+          seller: product.seller?.name || "Unknown",
+          bidAmount: userBid.amount,
+          bidTime: userBid.time,
+        });
+      }
     }
-    const products = await Product.find({ category, status: "approved" });
-    if (products.length === 0) {
-      return res.status(404).json({ message: "No products in this category" });
+
+    if (userBids.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "You haven’t placed any bids yet." });
     }
-    return res.status(200).json(products);
+
+    res.status(200).json(userBids);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server Error" });
+    console.error("Error fetching user bids:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
 
-//Get a specific product by product id
-router.get("/:id", async (req, res) => {
-  const { id } = req.params;
-  let isValid = mongoose.Types.ObjectId.isValid(id);
+// Get a specific product by ID
+router.get("/:id", authMiddleware, async (req, res) => {
   try {
-    if (!isValid) {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid product ID" });
     }
-    const product = await Product.findById(id);
+
+    const product = await Product.findById(id)
+      .populate("seller", "name")
+      .populate("winner", "name")
+      .populate({
+        path: "bids.bidder",
+        select: "name"
+      });
+
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
-    return res.status(200).json(product);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server Error" });
-  }
-});
 
-
-//Get all auction products of a seller by seller id
-router.get("/seller/:sellerId", async (req, res) => {
-  const { sellerId } = req.params;
-  let isValid = mongoose.Types.ObjectId.isValid(sellerId);
-  try {
-    if (!isValid) {
-      return res.status(400).json({ message: "Invalid seller ID" });
+    // Check if auction has ended and update status
+    const now = new Date();
+    if (product.status === 'active' && now > product.endTime) {
+      if (product.bids.length > 0) {
+        // Sort bids to find highest bidder
+        product.bids.sort((a, b) => b.amount - a.amount);
+        product.winner = product.bids[0].bidder;
+        product.status = 'sold';
+      } else {
+        product.status = 'unsold';
+      }
+      await product.save();
+      
+      // Repopulate winner if needed
+      if (product.status === 'sold') {
+        await product.populate('winner', 'name');
+      }
     }
-    const sellerProducts = await Product.find({ seller: sellerId }).sort({
-      createdAt: -1,
+
+    return res.status(200).json({ 
+      product, 
+      bids: product.bids 
     });
-    return res.status(200).json(sellerProducts);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server Error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
 
-//bid a product
-router.post("/bid/:id", authMiddleware, async (req, res) => {
-  const { amount, quantity } = req.body;
+// Place a bid on a product
+router.post("/:id/bid", authMiddleware, async (req, res) => {
+  const { amount } = req.body;
   const { id } = req.params;
+
   try {
-    const isValid = mongoose.Types.ObjectId.isValid(id);
-    if (!isValid) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid product ID" });
     }
 
@@ -205,37 +215,82 @@ router.post("/bid/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
+    // Check if auction is active
+    if (product.status !== 'active') {
+      return res.status(400).json({ message: "Auction is not active" });
+    }
+
+    // Check if user is seller
     if (product.seller.equals(req.user._id)) {
-      return res
-        .status(403)
-        .json({ message: "Sellers cannot bid on their own products" });
+      return res.status(403).json({ message: "Sellers cannot bid on their own products" });
     }
 
-    if (product.quantity < quantity) {
-      return res
-        .status(400)
-        .json({ message: "Requested quantity not available" });
+    // Check if bid is valid
+    if (amount <= (product.currentPrice || product.startingPrice)) {
+      return res.status(400).json({ 
+        message: `Bid must be higher than current price of $${product.currentPrice || product.startingPrice}` 
+      });
     }
 
-    if (amount <= product.currentPrice) {
-      return res
-        .status(400)
-        .json({ message: `Bid must be higher than ${product.currentPrice}` });
-    }
-
-    // Deduct the quantity
-    product.quantity -= quantity;
-
-    // If no quantity left, mark as sold
-    if (product.quantity === 0) {
-      product.status = "sold";
-    }
-    product.bids.push({ amount: amount, bidder: req.user._id });
+    // Add new bid
+    product.bids.push({ 
+      amount, 
+      bidder: req.user._id,
+      time: new Date()  
+    });
     product.currentPrice = amount;
+    
     await product.save();
-    return res
-      .status(201)
-      .json({ success: true, message: "Bid placed successfully", product });
+
+    return res.status(201).json({ 
+      success: true, 
+      message: "Bid placed successfully", 
+      product 
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server Error" });
+  }
+});
+
+
+
+// Mark product as sold
+router.patch("/:id/mark-sold", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid product ID" });
+    }
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // Check if auction has ended
+    const now = new Date();
+    if (now < product.endTime) {
+      return res.status(400).json({ message: "Auction has not ended yet" });
+    }
+
+    // Update status and set winner
+    if (product.bids.length > 0) {
+      // Sort bids to find highest bidder
+      product.bids.sort((a, b) => b.amount - a.amount);
+      product.winner = product.bids[0].bidder;
+      product.status = 'sold';
+    } else {
+      product.status = 'unsold';
+    }
+
+    await product.save();
+
+    return res.status(200).json({ 
+      success: true, 
+      message: "Product status updated", 
+      product 
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server Error" });
