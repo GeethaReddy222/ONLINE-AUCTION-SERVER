@@ -175,6 +175,19 @@ router.patch("/pending-approvals/:id", authMiddleware, async (req, res) => {
 
 
 
+//get sold products
+router.get("/sold-products",async(req,res)=>{
+  try{
+    const soldProducts=await Product.find({status:'sold'})
+        .populate("seller","name email")
+        .populate('bids.bidder', 'name email');
+    return res.status(200).json(soldProducts);
+
+  }catch(error){
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 
 
